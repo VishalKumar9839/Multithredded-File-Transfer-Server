@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -200,6 +200,276 @@ function fetchFileList() {
 }
 
 fetchFileList();
+</script>
+</body>
+</html> -->
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>File Transfer Server</title>
+
+<style>
+  :root{
+    --bg1: #2f2740;
+    --bg2: #7b6b86;
+    --card: rgba(255,255,255,0.06);
+    --accent: #2fe1e6;
+    --accent-2: #67f2d6;
+    --muted: rgba(255,255,255,0.6);
+    --glass: rgba(255,255,255,0.04);
+  }
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+  body{
+    background: linear-gradient(135deg,var(--bg1) 10%, #42344f 40%, var(--bg2) 100%);
+    color: white;
+    -webkit-font-smoothing:antialiased;
+    display:flex;align-items:center;justify-content:center;flex-direction:column;
+    padding:4vh 3vw;
+  }
+
+  header{ text-align:center; margin-bottom:18px; }
+  h1{ font-size:2.2rem; margin:8px 0; letter-spacing:0.6px; }
+  .subtitle{ color:var(--muted); font-size:0.95rem; }
+
+  .panel{
+    width:min(920px,96vw);
+    background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));
+    border-radius:16px; padding:32px; box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+    border: 1px solid rgba(255,255,255,0.04);
+  }
+
+  .drop {
+    border: 3px dashed rgba(255,255,255,0.14);
+    border-radius:16px;
+    padding:48px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    transition:all .18s ease;
+    background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));
+  }
+
+  .drop.dragging{
+    transform:translateY(-6px) scale(1.01);
+    border-color: var(--accent);
+    box-shadow: 0 10px 30px rgba(46,226,230,0.06), inset 0 0 40px rgba(46,226,230,0.02);
+  }
+
+  .drop p{ color:var(--muted); font-size:1rem; margin:0; }
+  .btn{
+    margin-top:18px; display:inline-block; padding:10px 18px; border-radius:10px;
+    background:linear-gradient(90deg,var(--accent),var(--accent-2)); color:#052b2a; font-weight:600;
+    border:none; cursor:pointer; box-shadow: 0 8px 25px rgba(50,200,200,0.08);
+  }
+  .btn:active{ transform:translateY(1px); }
+
+  .file-list{ margin-top:22px; display:flex; flex-direction:column; gap:12px; }
+  .file-item{
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--glass); border-radius:10px; padding:10px 14px;
+    backdrop-filter: blur(6px);
+  }
+  .file-meta{ display:flex; align-items:center; gap:12px; }
+  .file-name{ font-weight:600; max-width:48ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .file-actions{ display:flex; gap:10px; align-items:center; }
+
+  .download-link{ color:var(--accent); text-decoration:none; font-weight:600; padding:6px 10px; border-radius:8px; background: rgba(255,255,255,0.02); }
+  .small-muted{ color:var(--muted); font-size:.9rem; }
+  .progress-bar{ height:8px; border-radius:999px; background: rgba(255,255,255,0.04); overflow:hidden; width:240px; }
+  .progress-inner{ height:8px; background: linear-gradient(90deg,var(--accent),var(--accent-2)); width:0%; transition: width .2s linear; }
+
+  .controls{ display:flex; gap:12px; align-items:center; margin-top:18px; }
+  .ghost{ opacity:0.6; }
+
+  footer{ margin-top:18px; color:var(--muted); font-size:0.9rem; text-align:center; }
+
+  /* small screen */
+  @media (max-width:600px){
+    .panel{ padding:18px; }
+    .drop{ padding:28px; }
+    .progress-bar{ width:160px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div style="display:flex;align-items:center;gap:12px;justify-content:center">
+    <div style="font-size:28px">🚀</div>
+    <div>
+      <h1>File Transfer Server</h1>
+      <div class="subtitle">Drag & drop files to upload — download instantly. Hosted & simple.</div>
+    </div>
+  </div>
+</header>
+
+<section class="panel" role="main" aria-labelledby="title">
+  <div id="dropzone" class="drop" tabindex="0">
+    <p id="droptext">Drag & Drop a file here<br/>or click to select</p>
+    <input id="filepicker" type="file" style="display:none" multiple />
+    <div class="controls">
+      <button id="refreshBtn" class="btn">Refresh File List</button>
+      <button id="openStorage" class="btn" style="background:#ffffff33;color:white">Open Storage Folder</button>
+    </div>
+  </div>
+
+  <div id="listWrap" class="file-list" aria-live="polite" style="margin-top:22px"></div>
+
+  <footer>
+    <div class="small-muted">Files in storage: served from <code>/storage</code></div>
+  </footer>
+</section>
+
+<script>
+(async function(){
+  const dropzone = document.getElementById('dropzone');
+  const picker = document.getElementById('filepicker');
+  const refreshBtn = document.getElementById('refreshBtn');
+  const openStorage = document.getElementById('openStorage');
+  const listWrap = document.getElementById('listWrap');
+
+  // Local path (your environment)
+  const LOCAL_INDEX_PATH = "/home/vishal_kumar/projects/Multithreaded File Transfer Server/storage/index.html";
+
+  // Helper to fetch file list — request Accept:text/plain to receive listing
+  async function fetchFileList(){
+    try {
+      const res = await fetch('/', { headers: { 'Accept': 'text/plain' }, cache: 'no-store' });
+      if (!res.ok) throw new Error('Error fetching list: ' + res.status);
+      const txt = await res.text();
+      // listing is expected as one file name per line
+      const names = txt.split('\\n').map(s => s.trim()).filter(Boolean);
+      renderFileList(names);
+    } catch (err) {
+      console.error(err);
+      listWrap.innerHTML = '<div class="small-muted">Failed to fetch file list — check server logs.</div>';
+    }
+  }
+
+  function renderFileList(names){
+    if (!names.length){
+      listWrap.innerHTML = '<div class="small-muted">No files in storage</div>';
+      return;
+    }
+    listWrap.innerHTML = '';
+    names.forEach(name=>{
+      const item = document.createElement('div');
+      item.className = 'file-item';
+
+      const meta = document.createElement('div'); meta.className='file-meta';
+      const fname = document.createElement('div'); fname.className='file-name'; fname.textContent = decodeURIComponent(name);
+      const fsmall = document.createElement('div'); fsmall.className='small-muted'; fsmall.textContent = name;
+      meta.appendChild(fname);
+
+      const actions = document.createElement('div'); actions.className='file-actions';
+
+      // download link
+      const dl = document.createElement('a');
+      dl.className = 'download-link';
+      // use encoded name
+      dl.href = '/' + encodeURIComponent(name);
+      dl.textContent = 'Download';
+      dl.setAttribute('download', decodeURIComponent(name));
+      actions.appendChild(dl);
+
+      // progress container (hidden until upload)
+      const progWrap = document.createElement('div'); progWrap.style.display='none'; progWrap.className='progress-bar';
+      const progInner = document.createElement('div'); progInner.className='progress-inner';
+      progWrap.appendChild(progInner);
+      actions.appendChild(progWrap);
+
+      item.appendChild(meta);
+      item.appendChild(actions);
+
+      listWrap.appendChild(item);
+    });
+  }
+
+  // Upload via XMLHttpRequest to track progress
+  function uploadFile(file, desiredName = null){
+    return new Promise((resolve, reject) => {
+      const name = desiredName || file.name;
+      // create an ephemeral UI row at top for this upload
+      const row = document.createElement('div'); row.className='file-item';
+      const meta = document.createElement('div'); meta.className='file-meta';
+      const fna = document.createElement('div'); fna.className='file-name'; fna.textContent = file.name;
+      meta.appendChild(fna);
+      const actions = document.createElement('div'); actions.className='file-actions';
+      const progWrap = document.createElement('div'); progWrap.className='progress-bar';
+      const progInner = document.createElement('div'); progInner.className='progress-inner';
+      progWrap.appendChild(progInner);
+      actions.appendChild(progWrap);
+      row.appendChild(meta); row.appendChild(actions);
+      listWrap.insertBefore(row, listWrap.firstChild);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/' + encodeURIComponent(name), true);
+      xhr.upload.onprogress = function(e){
+        if (e.lengthComputable){
+          const p = Math.round((e.loaded / e.total) * 100);
+          progInner.style.width = p + '%';
+        }
+      };
+      xhr.onload = function(){
+        if (xhr.status >= 200 && xhr.status < 300){
+          progInner.style.width = '100%';
+          setTimeout(()=>{ fetchFileList(); }, 600);
+          resolve(xhr.responseText);
+        } else {
+          progInner.style.background = 'crimson';
+          reject(new Error('Upload failed ' + xhr.status));
+        }
+      };
+      xhr.onerror = function(){ progInner.style.background = 'crimson'; reject(new Error('Network error')); };
+      xhr.send(file);
+    });
+  }
+
+  // drag and drop UI
+  function prevent(e){ e.preventDefault(); e.stopPropagation(); }
+  ['dragenter','dragover','dragleave','drop'].forEach(ev=>{
+    dropzone.addEventListener(ev, prevent);
+  });
+  dropzone.addEventListener('dragover', ()=> dropzone.classList.add('dragging'));
+  dropzone.addEventListener('dragleave', ()=> dropzone.classList.remove('dragging'));
+  dropzone.addEventListener('drop', (ev) => {
+    dropzone.classList.remove('dragging');
+    const files = Array.from(ev.dataTransfer.files || []);
+    if (!files.length) return;
+    // multiple file uploads concurrently
+    Promise.all(files.map(f => uploadFile(f))).catch(console.error);
+  });
+
+  dropzone.addEventListener('click', ()=> picker.click());
+  picker.addEventListener('change', ()=> {
+    const files = Array.from(picker.files || []);
+    if (!files.length) return;
+    Promise.all(files.map(f => uploadFile(f))).catch(console.error);
+    picker.value = '';
+  });
+
+  refreshBtn.addEventListener('click', ()=> fetchFileList());
+  openStorage.addEventListener('click', ()=>{
+    // We can't open a local folder from the browser on Railway.
+    // But show the local storage path for convenience.
+    alert("Local storage path (on your machine):\\n" + LOCAL_INDEX_PATH + "\\n\\nUse this path in your editor to update files.");
+  });
+
+  // on load
+  fetchFileList();
+
+  // periodic refresh every 25s
+  setInterval(fetchFileList, 25000);
+
+  // keyboard accessibility: Enter opens picker
+  dropzone.addEventListener('keydown', e=> {
+    if (e.key === 'Enter' || e.key === ' ') { picker.click(); }
+  });
+
+})();
 </script>
 </body>
 </html>
