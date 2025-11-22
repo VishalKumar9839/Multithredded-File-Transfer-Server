@@ -181,32 +181,24 @@ void Server::run() {
                     // GET handler
                     if (conn->method == "GET") {
                         // root directory listing when requesting "/"
-                        if (conn->uri == "/" || conn->uri.empty()) {
-                            DIR *d = opendir(root.c_str());
-                            if (!d) {
-                                string body = "Internal Server Error\n";
-                                string hdr = make_response_header(500, "Internal Server Error", body.size(), false);
-                                send(conn->fd, hdr.c_str(), hdr.size(), 0);
-                                send(conn->fd, body.c_str(), body.size(), 0);
-                                close(conn->fd);
-                                return;
-                            }
-                            string listing;
-                            struct dirent *e;
-                            while ((e = readdir(d)) != nullptr) {
-                                // show regular files only
-                                if (e->d_type == DT_REG) {
-                                    listing += e->d_name;
-                                    listing += "\n";
-                                }
-                            }
-                            closedir(d);
-                            string hdr = make_response_header(200, "OK", listing.size(), false);
-                            send(conn->fd, hdr.c_str(), hdr.size(), 0);
-                            if (!listing.empty()) send(conn->fd, listing.c_str(), listing.size(), 0);
+                        if (conn->uri == "/") {
+                          string index_path = root + "/index.html";
+
+                        if (!file_exists(index_path)) {
+                            string msg = "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nNot Found";
+                            send(conn->fd, msg.c_str(), msg.size(), 0);
                             close(conn->fd);
                             return;
                         }
+                                             int fd = open(index_path.c_str(), O_RDONLY);
+                        off_t size = file_size(index_path);
+                                             string hdr = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " + to_string(size) + "\r\n\r\n";
+                        send(conn->fd, hdr.c_str(), hdr.size(), 0);
+                                             off_t off = 0;
+                        while (off < size) sendfile(conn->fd, fd, &off, size - off);
+                                             close(fd);
+                        close(conn->fd);
+                        return;}                       
 
                         string path = sanitize_path(root, conn->uri);
                         if (!file_exists(path)) {
