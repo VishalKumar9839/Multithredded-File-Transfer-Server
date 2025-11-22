@@ -1,0 +1,5 @@
+root = ./storage
+port = 8080
+threads = 8
+max_events = 1024
+max_upload = 104857600
